@@ -36,6 +36,7 @@ jobs:
         with:
           name: test-results
           path: .test-output/
+          include-hidden-files: true
   apk:
     needs: tests
     runs-on: ubuntu-24.04
