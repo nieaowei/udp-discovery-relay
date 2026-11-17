@@ -19,8 +19,18 @@ printf '%s\n' "$arch" > "$work/root/etc/apk/arch"
     --info 'description:Test dependency capabilities only' \
     --info 'provides:lua lua-cjson libuci-lua ubus gl-sdk4-ui-core gl-oui-rpc luci-lib-nixio' \
     --files "$work/empty" --output "$work/deps.apk"
+# Assert target payload ownership even when CI builds as an ordinary user.
+for package in "$core" "$ui"; do
+    "$apk" adbdump "$package" > "$work/package-metadata"
+    awk '/^[[:space:]]+(user|group):/ { seen=1; if ($2 != "root") bad=1 } END { exit !seen || bad }' "$work/package-metadata"
+done
+# A usermode database allows the same disposable transactions without root.
 # The test deliberately does not execute service hooks in the fake firmware.
-"$apk" --root "$work/root" --initdb --allow-untrusted --no-network --no-scripts add "$work/deps.apk" "$core" "$ui"
+if [ "$(id -u)" = 0 ]; then
+    "$apk" --root "$work/root" --initdb --allow-untrusted --no-network --no-scripts add "$work/deps.apk" "$core" "$ui"
+else
+    "$apk" --root "$work/root" --initdb --usermode --allow-untrusted --no-network --no-scripts add "$work/deps.apk" "$core" "$ui"
+fi
 [ -x "$work/root/usr/bin/udp-discovery-relay" ]
 [ -f "$work/root/www/views/gl-sdk4-ui-udp-discovery-relay.common.js" ]
 "$apk" --root "$work/root" --allow-untrusted --no-network --no-scripts del gl-ui-udp-discovery-relay
@@ -30,7 +40,7 @@ cp "$work/root/etc/config/udp_discovery_relay" "$work/expected"
 # Upgrade with a changed packaged default. apk must preserve user edits and
 # stage the replacement as .apk-new under its /etc protection policy.
 mkdir "$work/upgrade"
-"$apk" extract --allow-untrusted --destination "$work/upgrade" "$core"
+"$apk" extract --allow-untrusted --no-chown --destination "$work/upgrade" "$core"
 printf '\n# upgraded package default\n' >> "$work/upgrade/etc/config/udp_discovery_relay"
 "$apk" mkpkg --info name:udp-discovery-relay --info version:0.1.1-r1 --info "arch:$arch" \
     --info 'depends:lua lua-cjson libuci-lua ubus' --files "$work/upgrade" --output "$work/upgrade.apk"

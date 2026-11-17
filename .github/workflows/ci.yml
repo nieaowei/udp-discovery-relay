@@ -48,7 +48,7 @@ jobs:
       UDR_APK_ARCH: aarch64_cortex-a53
     steps:
       - uses: actions/checkout@v4
-      - run: sudo apt-get update -qq && sudo apt-get install -y zstd
+      - run: sudo apt-get update -qq && sudo apt-get install -y zstd fakeroot
       - name: Fetch verified SDK
         run: |
           curl --fail --location --retry 3 "$SDK_URL" -o /tmp/sdk.tar.zst

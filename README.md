@@ -50,6 +50,8 @@ OpenWrt 默认使用 `/etc/config/udp_discovery_relay`，逻辑网络由 `ubus n
 
 ### 静态 Core + 官方 SDK 打包
 
+普通 Linux 构建用户需要安装 `fakeroot`；APK 打包脚本会自动通过它记录 root 文件所有权。APK 事务测试在独立临时根目录使用 usermode 数据库，无需 sudo。
+
 使用匹配设备的 SDK 优先；当前参考 CI SDK 固定为官方 25.12.6 Filogic，不混用动态库或固件源。先核验 SDK 下载 SHA-256，然后在 Linux 执行：
 
 ```sh

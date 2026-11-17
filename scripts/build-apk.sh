@@ -2,6 +2,12 @@
 # Genuine APK v3 packages using the official OpenWrt SDK host packager.
 # This is a static-core packaging path; the feed Makefile uses rust/host instead.
 set -eu
+# apk records source-file ownership. Match OpenWrt's fakeroot packager so
+# ordinary build users never ship packages owned by their host UID/name.
+if [ "$(id -u)" != 0 ]; then
+    command -v fakeroot >/dev/null 2>&1 || { echo 'Non-root APK packaging requires fakeroot.' >&2; exit 1; }
+    exec fakeroot -- "$0" "$@"
+fi
 umask 022
 root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
 sdk=${1:?Usage: build-apk.sh SDK_ROOT [DIST_DIR]}
