@@ -50,14 +50,14 @@ OpenWrt 默认使用 `/etc/config/udp_discovery_relay`，逻辑网络由 `ubus n
 
 ### 静态 Core + 官方 SDK 打包
 
-普通 Linux 构建用户需要安装 `fakeroot`；APK 打包脚本会自动通过它记录 root 文件所有权。APK 事务测试在独立临时根目录使用 usermode 数据库，无需 sudo。
+Core 可由普通 Linux 用户编译；APK 打包必须记录 root 文件所有权，建议通过 `sudo` 或 root 容器执行。普通用户可尝试 `fakeroot`，但部分 SDK 的运行包装器与宿主 fakeroot 不兼容；脚本会检查实际元数据并拒绝错误所有权的包。CI 仅对打包步骤使用 sudo，APK 事务测试则在独立临时根目录使用 usermode 数据库，无需 sudo。
 
 使用匹配设备的 SDK 优先；当前参考 CI SDK 固定为官方 25.12.6 Filogic，不混用动态库或固件源。先核验 SDK 下载 SHA-256，然后在 Linux 执行：
 
 ```sh
 rustup target add aarch64-unknown-linux-musl
 UDR_SDK_LABEL='your audited SDK revision' scripts/build-static.sh /path/to/sdk
-UDR_APK_ARCH=aarch64_cortex-a53 scripts/build-apk.sh /path/to/sdk
+sudo env UDR_APK_ARCH=aarch64_cortex-a53 scripts/build-apk.sh /path/to/sdk
 scripts/test-apk.sh /path/to/sdk
 ```
 

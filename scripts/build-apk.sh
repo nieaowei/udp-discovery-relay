@@ -84,8 +84,14 @@ HOOK
         --info 'tags:openwrt:section=net' \
         --script "post-install:$build/post-install" --script "post-upgrade:$build/post-upgrade" \
         --script "pre-deinstall:$build/pre-deinstall" --script "post-deinstall:$build/post-deinstall" \
-        --files "$payload" --output "$out/$filename"
-    "$apk" verify --allow-untrusted "$out/$filename"
+        --files "$payload" --output "$build/$filename"
+    "$apk" adbdump "$build/$filename" > "$build/metadata"
+    if ! awk '/^[[:space:]]+(user|group):/ { seen=1; if ($2 != "root") { print "Non-root APK ownership: " $0 > "/dev/stderr"; bad=1 } } END { exit !seen || bad }' "$build/metadata"; then
+        echo 'SDK apk did not record root ownership; rerun packaging as real root (sudo or a root container).' >&2
+        exit 1
+    fi
+    "$apk" verify --allow-untrusted "$build/$filename"
+    mv "$build/$filename" "$out/$filename"
     (cd "$out" && sha256sum "$filename" > "$filename.sha256")
 done
 cp "$root/LICENSE" "$out/LICENSE"

@@ -22,7 +22,7 @@ printf '%s\n' "$arch" > "$work/root/etc/apk/arch"
 # Assert target payload ownership even when CI builds as an ordinary user.
 for package in "$core" "$ui"; do
     "$apk" adbdump "$package" > "$work/package-metadata"
-    awk '/^[[:space:]]+(user|group):/ { seen=1; if ($2 != "root") bad=1 } END { exit !seen || bad }' "$work/package-metadata"
+    awk '/^[[:space:]]+(user|group):/ { seen=1; if ($2 != "root") { print "Non-root APK ownership: " $0 > "/dev/stderr"; bad=1 } } END { exit !seen || bad }' "$work/package-metadata"
 done
 # A usermode database allows the same disposable transactions without root.
 # The test deliberately does not execute service hooks in the fake firmware.
