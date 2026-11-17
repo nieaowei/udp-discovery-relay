@@ -1,5 +1,13 @@
 use serde::Serialize;
 use std::{collections::VecDeque, path::Path, time::Instant};
+
+pub fn remove_status(path: &Path) -> std::io::Result<()> {
+    // procd's stop_service hook can already have removed the status file.
+    match std::fs::remove_file(path) {
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        result => result,
+    }
+}
 #[derive(Serialize)]
 pub struct Metrics {
     pub version: &'static str,
@@ -95,6 +103,25 @@ impl Metrics {
 }
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn status_cleanup_handles_an_already_removed_file() {
+        let root = std::env::temp_dir().join(format!(
+            "udr-status-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        std::fs::create_dir(&root).unwrap();
+        let path = root.join("status.json");
+        std::fs::write(&path, "{}").unwrap();
+        super::remove_status(&path).unwrap();
+        super::remove_status(&path).unwrap();
+        assert!(super::remove_status(&root).is_err());
+        std::fs::remove_dir(root).unwrap();
+    }
+
     #[test]
     fn errors_are_bounded() {
         let mut m = super::Metrics::default();

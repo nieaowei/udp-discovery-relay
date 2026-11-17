@@ -293,6 +293,8 @@ printf '{"up":true,"l3_device":"%s"}' "$dev"
 """)
             ubus.chmod(0o755)
             os.environ['PATH']=str(tmp)+':'+os.environ['PATH']
+            # OpenWrt's stop_service hook may remove this before SIGTERM.
+            status.unlink(missing_ok=True)
             relay.terminate();assert relay.wait(timeout=3)==0
             assert 'udp-discovery-relay: stopped' in (output / 'relay.log').read_text()
             assert 'udp-discovery-relay: stopped' not in (output / 'relay-error.log').read_text()

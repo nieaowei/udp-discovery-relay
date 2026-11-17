@@ -265,7 +265,7 @@ pub fn run(path: Option<&Path>, status: &Path) -> Result<()> {
         }
     }
     drop(active);
-    std::fs::remove_file(status)?;
+    crate::metrics::remove_status(status)?;
     if enabled_log(&c.log_level, "info", "info") {
         println!("udp-discovery-relay: stopped");
     }
