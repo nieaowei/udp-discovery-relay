@@ -1,6 +1,6 @@
 # firewall4 / nftables
 
-**The packages never change your firewall, Avahi configuration or routing.** Automatic firewall modification is absent, and therefore off. The following is a reviewable example for the supplied two private networks. Verify that the zone names really are `wan` and `lan` using `uci show firewall`; logical networks and firewall zones are different objects.
+**The packages never change your firewall, Avahi configuration or routing.** Automatic firewall modification is absent, and therefore off. The examples below use two fictional private subnets: upstream `192.168.1.0/24` in zone `wan`, and downstream `192.168.8.0/24` in zone `lan`. The relay host has an upstream address of `192.168.1.2`. Replace these addresses, zones and ports with the actual network configuration. Verify that the zone names really are `wan` and `lan` using `uci show firewall`; logical networks and firewall zones are different objects.
 
 ## INPUT: discovery to the router
 
@@ -64,7 +64,7 @@ Replies use existing conntrack established/related handling. LocalSend's configu
 
 ## Check TCP SNAT
 
-The packet-socket discovery transmitter preserves the UDP source even if WAN masquerade is on. Direct TCP registration must also retain the device IP. Capture the source of SYNs and registration requests on both sides. If it becomes `192.168.1.211`, add a narrow exemption before fw4's SNAT zone jumps. This does not disable general WAN NAT:
+The packet-socket discovery transmitter preserves the UDP source even if WAN masquerade is on. Direct TCP registration must also retain the device IP. Capture the source of SYNs and registration requests on both sides. If it becomes the relay host's egress address, add a narrow exemption before fw4's SNAT zone jumps. This does not disable general WAN NAT:
 
 ```sh
 cat > /etc/udp-discovery-relay-no-snat.nft <<'NFT'
@@ -80,6 +80,8 @@ UCI
 ```
 
 `chain-pre`/`chain` are real [firewall4 include options](https://github.com/openwrt/firewall4/blob/master/root/usr/share/ucode/fw4.uc). Review `fw4 print` and run `fw4 check` before applying. This example assumes fw4 is the only IPv4 NAT manager. Additional NAT chains/VPN policies need separate inspection. Existing conntrack flows retain their previous NAT decision until closed/expired; restart the peer apps before retesting.
+
+The optional `scripts/enable-router-firewall.sh` and `scripts/enable-localsend-no-snat.sh` implement this example topology, require explicit execution and are never called by package installation. Review their fixed subnet and zone values before using them; select only the changes needed by the actual network.
 
 ## Apply and undo
 
@@ -99,4 +101,4 @@ rm -f /etc/udp-discovery-relay-no-snat.nft
 fw4 check && uci commit firewall && /etc/init.d/firewall reload
 ```
 
-If validation fails before committing, restore the backup or revert only these pending changes. Do not flush the firewall or broadly accept WAN INPUT/FORWARD. The MX4200 must have a return route to `192.168.8.0/24` via `192.168.1.211`; this is already reported as configured in the supplied topology, but verify on the actual router before testing.
+If validation fails before committing, restore the backup or revert only these pending changes. Do not flush the firewall or broadly accept WAN INPUT/FORWARD. In this example, the upstream gateway needs a return route to `192.168.8.0/24` via the relay host at `192.168.1.2`. Install return routes on the routers that forward replies; configure the SNAT exception on the router that would otherwise rewrite the source. Verify both directions before testing client transfers.

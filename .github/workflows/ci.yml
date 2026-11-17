@@ -42,10 +42,10 @@ jobs:
     runs-on: ubuntu-24.04
     env:
       # Official reference SDK, pinned content. Static musl avoids importing a
-      # different firmware's shared libraries. This is NOT the GL vendor SDK.
+      # different firmware's shared libraries. Validate target compatibility before installation.
       SDK_URL: https://downloads.openwrt.org/releases/25.12.6/targets/mediatek/filogic/openwrt-sdk-25.12.6-mediatek-filogic_gcc-14.3.0_musl.Linux-x86_64.tar.zst
       SDK_SHA256: 1c04ac47bdfc361d6aab299eb520d570e368013dedcb8d29cf39dc7168ae642e
-      UDR_SDK_LABEL: OpenWrt 25.12.6 official reference SDK; GL vendor acceptance pending
+      UDR_SDK_LABEL: OpenWrt 25.12.6 mediatek/filogic reference SDK
       UDR_APK_ARCH: aarch64_cortex-a53
     steps:
       - uses: actions/checkout@v4
@@ -86,5 +86,5 @@ jobs:
           GH_REPO: ${{ github.repository }}
           RELEASE_TAG: ${{ github.ref_name }}
         run: |
-          printf '%s\n' 'Source-preserving discovery relay. Read build-provenance.txt and the installation/acceptance guide before installation. APKs are unsigned; firmware 4.11.0 hardware acceptance is not implied by CI tests.' > /tmp/release-notes.md
+          printf '%s\n' 'Source-preserving discovery relay. Read build-provenance.txt and the installation/acceptance guide before installation. APKs are unsigned. Verify package architecture, SDK provenance and runtime dependencies for the target system.' > /tmp/release-notes.md
           gh release create "$RELEASE_TAG" dist/*.apk dist/*.sha256 dist/udp-discovery-relay dist/build-provenance.txt dist/LICENSE --title "$RELEASE_TAG" --notes-file /tmp/release-notes.md

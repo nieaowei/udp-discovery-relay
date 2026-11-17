@@ -1,0 +1,15 @@
+{
+  "enabled": true,
+  "log_level": "info",
+  "loop_protection": true,
+  "max_packet_size": 1400,
+  "rules": [
+    {
+      "id": "localsend",
+      "name": "LocalSend",
+      "port": 53317,
+      "multicast": "224.0.0.167",
+      "devices": ["eth0", "eth1"]
+    }
+  ]
+}

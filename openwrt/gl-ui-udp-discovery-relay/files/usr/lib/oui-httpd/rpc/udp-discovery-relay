@@ -1,5 +1,5 @@
--- Loaded exclusively by SDK4's authenticated oui.rpc dispatcher, as in the
--- supplied Avahi plugin. No standalone HTTP endpoint or arbitrary command RPC.
+-- Loaded exclusively by SDK4's authenticated oui.rpc dispatcher.
+-- No standalone HTTP endpoint or arbitrary command RPC.
 local fs=require 'nixio.fs'
 local nixio=require 'nixio'
 local json=require 'cjson.safe'

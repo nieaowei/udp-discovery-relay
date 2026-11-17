@@ -29,7 +29,7 @@ if "${linker%-gcc}-readelf" -l "$out/udp-discovery-relay" | grep -q INTERP; then
     echo 'Expected fully static musl executable, found a dynamic interpreter.' >&2; exit 1
 fi
 {
-    printf 'SDK label: %s\n' "${UDR_SDK_LABEL:-local-sdk-unverified-on-vendor-firmware}"
+    printf 'SDK label: %s\n' "${UDR_SDK_LABEL:-local-openwrt-sdk}"
     printf 'Target: aarch64-unknown-linux-musl; CPU cortex-a53; static\n'
     rustc --version
     "$linker" --version | head -1

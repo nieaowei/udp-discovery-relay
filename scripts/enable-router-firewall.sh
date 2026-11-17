@@ -1,5 +1,5 @@
 #!/bin/sh
-# Explicit opt-in for the inspected MT3600BE topology. Never called by packages.
+# Explicit opt-in for the example topology in docs/firewall.md. Never called by packages.
 set -eu
 [ "$(id -u)" = 0 ] || exit 1
 [ -z "$(uci changes firewall)" ] || { echo 'Pending firewall edits exist; preserve/review them before running this script.' >&2; exit 1; }

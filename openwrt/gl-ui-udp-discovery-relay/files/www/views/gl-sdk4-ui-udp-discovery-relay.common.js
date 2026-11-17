@@ -1,4 +1,4 @@
-/* SDK4 uses the supplied Vue/GL components and its authenticated RPC client. */
+/* SDK4 view using built-in Vue/GL components and the authenticated RPC client. */
 module.exports = (function () {
     'use strict';
     var words = {

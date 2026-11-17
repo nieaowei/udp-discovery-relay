@@ -1,6 +1,6 @@
 # Source preservation and LocalSend
 
-Research date: 2026-11-17. Primary references:
+Primary references:
 
 - [Official LocalSend protocol v2.2](https://github.com/localsend/protocol)
 - [Official discovery implementation](https://github.com/localsend/localsend/blob/main/packages/core/src/discovery/mod.rs), especially `answer_announcement` and `register_peer`.
@@ -15,9 +15,9 @@ For encrypted discovery, the certificate identity matters. The official discover
 
 The daemon receives UDP through Linux sockets with `IP_PKTINFO`, obtaining the actual destination and ingress ifindex. It joins only configured IPv4 multicast groups on the resolved devices. It accepts only matching multicast/broadcast traffic from an on-link, non-router source. Unicast traffic is not relayed. A rule's UDP listening port and the sender's original UDP source port are distinct and both preserved correctly.
 
-`IP_MULTICAST_IF` selects an interface, but does not make a normal UDP socket preserve a foreign source. `IP_HDRINCL` on an IPv4 raw socket permits an explicit source and complete header. An initial implementation passed the source tests with this method. However, the IPv4 POSTROUTING hook can subsequently apply WAN masquerade.
+`IP_MULTICAST_IF` selects an interface, but does not make a normal UDP socket preserve a foreign source. `IP_HDRINCL` on an IPv4 raw socket permits an explicit source and complete header. However, the IPv4 POSTROUTING hook can subsequently apply WAN masquerade.
 
-The delivered implementation transmits complete IP/UDP packets through `AF_PACKET/SOCK_DGRAM`, using the selected ifindex and the deterministic Ethernet multicast or broadcast destination. The kernel builds the Ethernet header. This avoids IPv4 OUTPUT/POSTROUTING SNAT of the discovery packet. No ARP forgery or neighbor-table change is required. IPv4 and UDP checksums are constructed in Rust, including the UDP pseudoheader and zero-checksum mapping. Packet TTL is 1 and DF is set. Egress MTU and configured payload limits are checked before transmission.
+The relay transmits complete IP/UDP packets through `AF_PACKET/SOCK_DGRAM`, using the selected ifindex and the deterministic Ethernet multicast or broadcast destination. The kernel builds the Ethernet header. This avoids IPv4 OUTPUT/POSTROUTING SNAT of the discovery packet. No ARP forgery or neighbor-table change is required. IPv4 and UDP checksums are constructed in Rust, including the UDP pseudoheader and zero-checksum mapping. Packet TTL is 1 and DF is set. Egress MTU and configured payload limits are checked before transmission.
 
 This is limited to Ethernet-like devices (including bridges and VLAN interfaces). Tunnel and point-to-point devices, overlapping subnets, down devices and missing IPv4 addresses produce explicit errors. It is a deliberate local-link discovery reflector, not a multicast routing daemon. Discovery send traffic bypasses IPv4 OUTPUT filtering; configure narrow relay rules accordingly. Bridge/netdev filtering, hardware or Wi-Fi multicast policy can still prevent delivery.
 
@@ -25,7 +25,7 @@ This is limited to Ethernet-like devices (including bridges and VLAN interfaces)
 
 Clients still exchange HTTP(S) directly. Both networks need routes to each other, host firewalls permitting LocalSend and precise router FORWARD permission. A TCP connection that can reach a peer through NAT is not proof of transparent bidirectional registration: the receiving peer may learn the NAT address as the registering device. Exempt only inter-subnet LocalSend TCP from SNAT when necessary; see [firewall.md](firewall.md).
 
-The daemon detects missing/down/overlapping local interfaces and unsupported L2 devices. It cannot infer remote host firewall rules, MX4200 routes or whether a remote certificate belongs to a particular installed app. `scripts/diagnose.sh` reports the available local network, routing, firewall and daemon evidence; packet capture and actual-client acceptance are required to establish those external facts. Do not interpret a positive forwarded counter as successful file transfer.
+The daemon detects missing/down/overlapping local interfaces and unsupported L2 devices. It cannot infer remote host firewall rules, upstream routes or whether a remote certificate belongs to a particular installed app. `scripts/diagnose.sh` reports the available local network, routing, firewall and daemon evidence; packet capture and actual-client acceptance are required to establish those external facts. Do not interpret a positive forwarded counter as successful file transfer.
 
 ## Loops, resources and privilege
 

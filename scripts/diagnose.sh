@@ -17,4 +17,4 @@ printf '\nLocal IPv4 firewall and SNAT evidence\n'
 nft list table inet fw4
 printf '\nRecent bounded relay logs\n'
 logread -e udp-discovery-relay -l 50
-printf '\nVerify remotely: upstream route to 192.168.8.0/24, host LocalSend firewall, TCP source IP and TLS registration. Local counters alone cannot confirm these.\n'
+printf '\nVerify return routes for the configured peer subnets, client firewall permissions, TCP source IP and TLS registration. Local counters alone cannot confirm these.\n'

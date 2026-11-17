@@ -1,96 +1,104 @@
-# MT3600BE 安装与真机验收
+# 安装与验收
 
-## 已知目标与产物边界
+## 平台与兼容性
 
-用户提供的设备信息：GL-MT3600BE，固件 4.11.0，OpenWrt `25.12-SNAPSHOT r32295+925-c25265953b`，Linux `6.12.94`，`mediatek/filogic`，`DISTRIB_ARCH=aarch64_cortex-a53`，`apk --print-arch=aarch64`。
+Core 运行于 Linux，以 JSON 配置独立使用；OpenWrt 集成提供 UCI/procd 适配，GL.iNet SDK4 UI 作为可选软件包提供。Core 不依赖特定路由器型号或 UI。
 
-本次本机构建使用已有、只读挂载的 OpenWrt **25.12.6 r33311-981c978eff** 工具链，GCC 14.3.0，Rust stable 1.100.0。Core 为 Cortex-A53、静态 musl ARM64 可执行文件，没有动态 ELF interpreter；不导入该 SDK 的共享库，不安装其他版本的库、不更换固件软件源、不包含内核模块。APK 使用同一 SDK 的官方 apk-tools 3.0.5 打包，Core 包架构为 `/etc/apk/arch` 接受的 `aarch64_cortex-a53`（`apk --print-arch=aarch64` 仅表示工具自身编译架构），UI 为 `noarch`。这减少用户态 ABI 耦合，但**不是厂商 SDK 与目标固件完全匹配的证明**。
+当前 CI 输出 ARM64 Cortex-A53 / musl 参考产物。安装前核对 CPU、OpenWrt 软件包架构、SDK 来源和系统依赖。`/etc/apk/arch` 决定 APK 可接受的架构；`apk --print-arch` 只表示 apk-tools 自身的编译架构。其他平台需要对应构建及验证。
 
-已完成真实路由器安装、原生菜单/状态/规则/日志加载、无效 sid 拒绝、procd 运行与 reload，以及真实 LAN→WAN 源地址抓包验证。见 [安装记录](router-install-20261117.md)。开机恢复、正式 LocalSend 客户端传输、物理 DHCP 续租和 AirPlay/HomeKit 共存仍待验收。不要把协议测试夹具当成官方 LocalSend 客户端。
+## 普通 Linux
 
-## 安装
+编译、复制示例配置，并将 `devices` 调整为实际以太网类接口：
 
-下面的示例针对当前源码 0.0.1-r1。历史真机安装记录为开发版 0.1.0-r2，保留于安装记录中；变更源码版本不会自动更新路由器已安装的软件。
+```sh
+cargo build --release --locked
+cp examples/relay.json relay.json
+./target/release/udp-discovery-relay --config relay.json --check
+sudo ./target/release/udp-discovery-relay --config relay.json --status /run/udr-status.json
+```
 
-从 `dist/` 复制两个 APK、各自的 `.sha256` 和 `build-provenance.txt` 到路由器 `/tmp/udr/`。保留原有固件软件源，先确认 `lua`、`lua-cjson`、`libuci-lua`、`ubus`、`gl-sdk4-ui-core`、`gl-oui-rpc`、`luci-lib-nixio` 可由当前固件满足。
+配置文件校验不需要网络权限。运行时需要创建 packet socket；进程完成初始化后保留 CAP_NET_RAW 并设置 no_new_privs。状态文件目录应预先存在，且避免非授权用户写入。使用发行版的服务管理器启动时，应传入相同的配置和状态路径。
+
+## OpenWrt APK
+
+保留匹配系统的固件软件源，将所选版本的 APK、校验和与 `build-provenance.txt` 复制到 `/tmp/udr/`。下例版本为 `0.0.1-r1`：
 
 ```sh
 cd /tmp/udr
 sha256sum -c udp-discovery-relay-0.0.1-r1.apk.sha256
-sha256sum -c gl-ui-udp-discovery-relay-0.0.1-r1.apk.sha256
 cat build-provenance.txt
-apk add --simulate --allow-untrusted ./udp-discovery-relay-0.0.1-r1.apk ./gl-ui-udp-discovery-relay-0.0.1-r1.apk
-# 审核模拟安装结果后实际安装。本次包未签名，allow-untrusted 仅针对这两个已校验本地文件。
-apk add --allow-untrusted ./udp-discovery-relay-0.0.1-r1.apk ./gl-ui-udp-discovery-relay-0.0.1-r1.apk
+apk add --simulate --allow-untrusted ./udp-discovery-relay-0.0.1-r1.apk
+apk add --allow-untrusted ./udp-discovery-relay-0.0.1-r1.apk
 /usr/bin/udp-discovery-relay --uci --check
-/etc/init.d/udp-discovery-relay status
-cat /var/run/udp-discovery-relay/status.json
 ```
 
-若遇到架构或依赖冲突，停止安装并使用匹配的厂商 SDK/软件源重新构建；不要强制覆盖系统依赖。Core 可单独安装。卸载 UI 只删除菜单、页面与 RPC；Core 保持运行。APK 的 `/etc` 配置保护和 OpenWrt conffiles 元数据保留用户配置；升级时出现 `.apk-new` 应人工比较。
+这里的 `--allow-untrusted` 用于已校验的本地未签名产物；通过可信签名 feed 安装时遵循该 feed 的签名验证流程。遇到架构或依赖冲突时使用匹配的构建，不强制覆盖系统依赖。
 
-默认配置启用 LocalSend、逻辑网络 `wan` 与 `lan`。如网络名不同，先编辑 `/etc/config/udp_discovery_relay`。按 [防火墙说明](firewall.md) 审核精确的 INPUT/FORWARD 与必要 TCP SNAT 豁免，再执行：
+Core 依赖 Lua、lua-cjson、libuci-lua 和 ubus。安装 UI 还需要兼容的 gl-sdk4-ui-core、gl-oui-rpc、luci-lib-nixio：
+
+```sh
+sha256sum -c gl-ui-udp-discovery-relay-0.0.1-r1.apk.sha256
+apk add --simulate --allow-untrusted ./gl-ui-udp-discovery-relay-0.0.1-r1.apk
+apk add --allow-untrusted ./gl-ui-udp-discovery-relay-0.0.1-r1.apk
+```
+
+默认逻辑网络为 `wan` 与 `lan`。按实际网络编辑 `/etc/config/udp_discovery_relay`，并参考 [防火墙指南](firewall.md) 检查 INPUT、FORWARD、返回路由与必要的 TCP SNAT 豁免。
 
 ```sh
 /etc/init.d/udp-discovery-relay enable
 /etc/init.d/udp-discovery-relay restart
+/etc/init.d/udp-discovery-relay status
+cat /var/run/udp-discovery-relay/status.json
 logread -e udp-discovery-relay -l 50
 ```
 
-原生管理界面：应用程序 → UDP Discovery Relay。硬刷新浏览器；页面没有外部 CDN、iframe 或 LuCI 页面依赖。
+UI 入口为应用程序中的 UDP Discovery Relay。配置保存与重新加载分别执行；已停止的服务需要显式启动。全局中继开关控制报文处理，开机开关控制进程自启动。升级保留用户 UCI 配置；出现 `.apk-new` 时应比较差异。
 
-## 抓包与真实客户端
+## 客户端与报文验证
 
-准备主路由侧 A=`192.168.1.X`，副路由侧 B=`192.168.8.Y`。先确认双方使用默认 LocalSend 组播地址和 53317 端口，允许操作系统防火墙中的 LocalSend 通信。Linux/macOS/Windows 终端、手机的 LocalSend 都应使用正式版本。开启 HTTPS，避免为了测试关闭证书校验。
-
-在路由器两个 SSH 窗口抓包（先使用 `ubus call network.interface.wan status` 与 `lan status` 确认设备名）：
+选择参与子网中的两个客户端 A、B，先确认它们能通过真实 IPv4 地址互相访问。由配置的 Linux 接口或 OpenWrt 逻辑网络确认实际出入设备：
 
 ```sh
-tcpdump -ni eth0 -vv 'udp port 53317 or tcp port 53317'
-tcpdump -ni br-lan -vv 'udp port 53317 or tcp port 53317'
+ubus call network.interface.lan status
+ubus call network.interface.wan status
+# 将下面的接口名替换为实际值。
+tcpdump -ni INTERFACE -vv 'udp port 53317 or tcp port 53317'
 ```
 
-1. A/B 全部退出后重开 LocalSend。两侧都应出现对方。br-lan 上由 A 中继来的 UDP 源必须为 A 的真实 IP；eth0 上由 B 中继来的 UDP 源必须为 B 的真实 IP，不能为路由器地址。UDP 源端口也应一致。
-2. 分别 A→B 和 B→A 发送实际文件；接收后比较 SHA-256。双方设备详细信息必须显示真实对端地址。仅看到名称不算通过。HTTPS 流量无法直接查看注册路径，可使用 LocalSend 调试日志核对 `/api/localsend/v2/register`；自动化夹具已在真实 TCP/TLS 连接上验证该路径。
-3. 同时启动三台以上设备，抓包 60 秒，应为有限的发现/响应报文，不应持续增长；查看 `loop_filtered`、`dropped` 与 RSS。
-4. 停止中继，再关闭并重新启动客户端或清除客户端发现缓存；跨子网的**新 UDP 发现**应停止。现有列表、手动指定 IP、已知设备的 HTTP 探测和已有 TCP 传输可能继续正常，这是协议行为。
-5. 重启中继并重新发起发现，两向均恢复。分别关闭规则、关闭全局启用、停止服务，验证三种开关的区别。
-6. 在保留本地管理通道的条件下进行 WAN DHCP 续租、接口断开与恢复；约 5 秒内重新建立规则。新 IP、设备/ifindex 应出现在统计中。不要在唯一远程 SSH 通道上盲目关闭 WAN。
-7. 测试 UI 所有控制项：新增/编辑/删除/启停规则、单向方向、日志级别、保存、应用、恢复默认、服务启停重启与开机开关。无效端口/IP必须返回错误，不能破坏旧配置；两个浏览器同时编辑应拒绝旧 revision 保存。
-8. 检查日志刷新、暂停、错误过滤、清空显示、导出；错误/空状态应有文字，统计缺失时显示 `—`，没有生成假计数。
-9. 浏览器开发工具中查看 `/rpc` 请求，确认使用已登录 SDK4 会话。用无 Cookie、无有效 sid 的请求调用模块，必须被固件拒绝；前端隐藏按钮不能替代后端权限。测试请求示例：
+1. 两端重开发现，确认对方可见；两个接口上观察中继 UDP 的源 IP、源端口与载荷保持一致。
+2. 分别执行 A→B、B→A 的实际文件传输，比较接收文件 SHA-256。显示名称或增加转发计数不能替代传输验收。
+3. 确认 TCP 注册的接收端看到真实客户端地址；有 SNAT 时按实际拓扑添加精确豁免。HTTPS 注册路径可从客户端日志核对，不关闭证书校验或添加 TLS 代理。
+4. 同时启动多个客户端，检查报文量稳定、循环过滤有效。重复报文缓存会合并同一来源在短时间内的相同载荷。
+5. 停止中继并重新发起客户端发现，确认新的跨子网 UDP 发现停止；已有连接、缓存、手动地址或 HTTP 探测仍可能继续工作。
+6. 分别测试规则开关、全局开关、reload、restart；不合法配置应被拒绝，旧运行配置保持有效。
+7. 通过本地或其他可恢复的管理通道测试接口 down/up、重新创建及地址续租，检查约五秒的检测周期后恢复。随后检查系统重启后的服务和配置恢复。
+8. 检查既有 mDNS、DHCP、IPv6 等服务及其配置保持正常，尤其是与发现中继同时运行的其他服务。
+
+## 可选 UI 验证
+
+在实际 SDK4 环境中检查菜单、主题、语言、规则编辑、服务启停、开机设置、保存/应用、恢复默认和日志控制。统计应来自 Core；缺失时显示未知值。两个管理会话同时编辑时，旧 revision 保存应被拒绝。
+
+在退出登录或使用无效 sid 时调用模块，固件必须拒绝请求。先将 `ROUTER_URL` 设置为实际管理地址，再运行只读验证：
 
 ```sh
 curl -i -H 'Content-Type: application/json' \
-  --data '{"jsonrpc":"2.0","id":1,"method":"call","params":["invalid-session","udp-discovery-relay","service",{"action":"stop"}]}' \
-  http://192.168.8.1/rpc
+  --data '{"jsonrpc":"2.0","id":1,"method":"call","params":["invalid-session","udp-discovery-relay","get_status",{}]}' \
+  "$ROUTER_URL/rpc"
 ```
 
-拒绝可能以 SDK4 JSON 错误返回，不一定是 HTTP 401；同时确认服务状态未变化。如固件允许该请求，禁用/卸载 UI 并检查其 RPC 会话分派配置，不能公开部署该模块。
+拒绝可以是 SDK4 JSON 错误，不一定返回 HTTP 401。认证检查必须由服务端分派层执行。配置写入及系统操作还需要在已认证会话中验证参数校验和实际结果。
 
-10. 在测试前后比较 `uci show avahi`（如存在）、Avahi 配置与防火墙规则；使用 AirPlay/HomeKit 实际连接并抓包确认 5353 正常。此服务不创建 5353 或 IPv6 socket，不修改 Avahi、DHCP、IPv6、转发 sysctl。
-11. 卸载 UI 后 Core 仍可发现和传文件；重新安装 UI。最后重启路由器，检查配置、开机启用状态、procd 进程、两向发现与文件哈希。
-
-## 配置/服务维护
+## 维护与卸载
 
 ```sh
 uci show udp_discovery_relay
 /etc/init.d/udp-discovery-relay reload
-/etc/init.d/udp-discovery-relay restart
-/etc/init.d/udp-discovery-relay disable
 /etc/init.d/udp-discovery-relay stop
-```
-
-日志由 logd 的系统环形缓冲管理，UI 每次仅取最近 200 条/64 KiB；没有文件日志无限增长。统计文件在 tmpfs，每次覆盖，最多 16 条最近错误。保存不自动启动已停止服务；应用只向运行实例重新加载，停止服务时请显式点击启动。开机启动与全局中继开关分别控制进程自启动和报文中继。
-
-卸载与防火墙撤销：
-
-```sh
+/etc/init.d/udp-discovery-relay disable
 apk del gl-ui-udp-discovery-relay
-# Core 独立运行，确认不再需要中继后才删除：
 apk del udp-discovery-relay
 ```
 
-按 firewall.md 删除本项目的命名规则即可撤销手工添加的防火墙项；卸载不会修改这些由用户创建的规则，也不会删除其他插件配置。
+UI 可独立卸载，Core 继续运行；仅在不再需要中继时移除 Core。手工创建的防火墙规则由管理员按 firewall.md 单独撤销，软件包不修改其他插件的配置。
 
-也可将 `scripts/install-router.sh` 复制到路由器，在审核构建来源和防火墙计划后运行 `sh install-router.sh /tmp/udr`。脚本验证 ARM64 与两个本地 APK 校验和、执行模拟和实际安装，不拉取新软件源、不改防火墙。`scripts/uninstall-router.sh` 默认只移除 UI，带 `--core` 时同时移除 Core。
+logd 管理系统日志缓冲；UI 每次读取最多 200 条、64 KiB。Core 状态在 tmpfs 中覆盖更新，最近错误最多保留 16 条。
