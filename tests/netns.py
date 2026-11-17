@@ -157,6 +157,7 @@ def main():
     for old in ['performance.json','integration.json']:
         (output/old).unlink(missing_ok=True)
     log = (output / 'relay.log').open('w')
+    error_log = (output / 'relay-error.log').open('w')
     results = []
     with tempfile.TemporaryDirectory(prefix='udr-test-') as tmp:
         tmp = Path(tmp)
@@ -185,7 +186,7 @@ def main():
             status = tmp / 'status.json'
             path.write_text(json.dumps(config))
             def start():
-                return sp.Popen(['ip', 'netns', 'exec', router, binary, '--config', str(path), '--status', str(status)], stdout=log, stderr=log)
+                return sp.Popen(['ip', 'netns', 'exec', router, binary, '--config', str(path), '--status', str(status)], stdout=log, stderr=error_log)
             relay = start()
             time.sleep(0.4)
             assert relay.poll() is None
@@ -278,6 +279,12 @@ def main():
             path.write_text(json.dumps(config));relay.send_signal(signal.SIGHUP);time.sleep(0.3)
             discovery(0,1,'enabled')
             record('SIGHUP validation, disable stops discovery, reenable recovers')
+            info = (output / 'relay.log').read_text()
+            errors = (output / 'relay-error.log').read_text()
+            assert 'started ' in info and 'configuration reloaded' in info, info
+            assert 'started ' not in errors and 'configuration reloaded' not in errors, errors
+            assert 'Reload rejected; keeping previous configuration' in errors, errors
+            assert 'Reload rejected' not in info, info
             # Resolve logical OpenWrt network names through the real ubus adapter.
             ubus=tmp/'ubus'
             ubus.write_text("""#!/bin/sh
@@ -287,6 +294,9 @@ printf '{"up":true,"l3_device":"%s"}' "$dev"
             ubus.chmod(0o755)
             os.environ['PATH']=str(tmp)+':'+os.environ['PATH']
             relay.terminate();assert relay.wait(timeout=3)==0
+            assert 'udp-discovery-relay: stopped' in (output / 'relay.log').read_text()
+            assert 'udp-discovery-relay: stopped' not in (output / 'relay-error.log').read_text()
+            record('successful lifecycle/reload messages use stdout; rejected reloads use stderr')
             one=dict(config['rules'][0]);one.pop('devices');one.update(direction='oneway',input=['alpha'],output=['beta'])
             original_rule=config['rules'][0];config['rules'][0]=one
             path.write_text(json.dumps(config));relay=start();time.sleep(0.4)
@@ -351,6 +361,7 @@ printf '{"up":true,"l3_device":"%s"}' "$dev"
             for ns in reversed(namespaces):
                 sp.run(['ip','netns','del',ns],stdout=sp.DEVNULL,stderr=sp.DEVNULL)
             log.close()
+            error_log.close()
     (output/'integration.json').write_text(json.dumps({'passed':results},indent=2)+'\n')
     print(json.dumps(perf,indent=2))
 

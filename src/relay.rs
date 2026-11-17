@@ -90,7 +90,8 @@ pub fn run(path: Option<&Path>, status: &Path) -> Result<()> {
     let mut publish = Instant::now();
     m.publish(status)?;
     if enabled_log(&c.log_level, "info", "info") {
-        eprintln!(
+        // procd maps stdout to daemon.info and stderr to daemon.err.
+        println!(
             "udp-discovery-relay: started {} ({} active rules)",
             env!("CARGO_PKG_VERSION"),
             active.len()
@@ -106,7 +107,7 @@ pub fn run(path: Option<&Path>, status: &Path) -> Result<()> {
                     m.log_level = c.log_level.clone();
                     rebuild = true;
                     if enabled_log(&c.log_level, "info", "info") {
-                        eprintln!("udp-discovery-relay: configuration reloaded");
+                        println!("udp-discovery-relay: configuration reloaded");
                     }
                 }
                 Err(e) => m.error(format!(
@@ -239,7 +240,7 @@ pub fn run(path: Option<&Path>, status: &Path) -> Result<()> {
                         Ok(()) => {
                             m.forwarded += 1;
                             if enabled_log(&c.log_level, &a.rule.log_level, "debug") {
-                                eprintln!(
+                                println!(
                                     "udp-discovery-relay: {} {}:{} {} -> {}",
                                     a.rule.id, r.source, r.sport, ingress.name, egress.name
                                 );
@@ -266,7 +267,7 @@ pub fn run(path: Option<&Path>, status: &Path) -> Result<()> {
     drop(active);
     std::fs::remove_file(status)?;
     if enabled_log(&c.log_level, "info", "info") {
-        eprintln!("udp-discovery-relay: stopped");
+        println!("udp-discovery-relay: stopped");
     }
     Ok(())
 }

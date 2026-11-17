@@ -102,3 +102,5 @@ apk del udp-discovery-relay
 UI 可独立卸载，Core 继续运行；仅在不再需要中继时移除 Core。手工创建的防火墙规则由管理员按 firewall.md 单独撤销，软件包不修改其他插件的配置。
 
 logd 管理系统日志缓冲；UI 每次读取最多 200 条、64 KiB。Core 状态在 tmpfs 中覆盖更新，最近错误最多保留 16 条。
+
+正常启动、成功重载和退出提示输出到 stdout，由 procd 记录为 `daemon.info`；实际错误输出到 stderr，记录为 `daemon.err`。`configuration reloaded` 表示配置已加载成功，网络接口事件也可能触发此提示；重载被拒绝时会报告 `Reload rejected`，并继续使用原配置。
