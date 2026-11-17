@@ -74,7 +74,7 @@ APK 打包必须记录 root 文件所有权。CI 仅对打包步骤使用 sudo�
 
 [gl-ui-udp-discovery-relay](https://github.com/nieaowei/gl-ui-udp-discovery-relay) 提供中英文、主题适配、响应式规则编辑、真实统计、服务管理和有限日志。页面使用 SDK4 的 Vue/GL 组件与已认证 RPC 分派，配置写入经过 Core 校验、并发 revision 检查和原子替换。
 
-Core 仓库中的 `openwrt/gl-ui-udp-discovery-relay` 是可构建快照；`scripts/sync-ui.sh /path/to/gl-ui-udp-discovery-relay` 可同步独立 UI 仓库。UI 的 Makefile 可在具备相应依赖的 SDK 中单独构建。Core 不依赖 UI；卸载 UI 不会停止 Core。
+UI 的源码、OpenWrt 包配方、测试与 APK 发布均由独立 UI 仓库维护。Core 仓库不包含 UI 快照，构建、版本检查和安装脚本只处理 Core。可从 UI 仓库单独构建或安装管理插件；卸载 UI 不会停止 Core。
 
 ## 网络配置与验证
 
@@ -85,6 +85,6 @@ UDP 发现、TCP 注册和文件传输需要分别验证。参与子网必须双
 - [协议与实现](docs/protocol.md)：LocalSend 注册、TLS 指纹、源地址保留和权限边界。
 - [测试指南](docs/testing.md)：本地检查、网络集成、APK 事务和性能测量。
 
-GitHub Actions 执行格式、Clippy、单元/UI/RPC、网络命名空间、ARM64 编译与 APK 事务检查，并上传当次的测试记录和安装包。`v0.0.1` 形式的版本 tag 才触发 Release；分支提交只测试与构建。
+Core 的 GitHub Actions 执行格式、Clippy、单元/UCI、网络命名空间、ARM64 编译与 Core APK 事务检查，并上传当次的测试记录和安装包。UI 检查与打包在独立仓库运行。`v0.0.1` 形式的版本 tag 才触发 Release；分支提交只测试与构建。
 
 GPL-3.0-only；见 [LICENSE](LICENSE)。

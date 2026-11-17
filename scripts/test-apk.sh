@@ -10,30 +10,26 @@ version=$(sed -n 's/^version = "\([^"]*\)"/\1/p' "$root/Cargo.toml" | head -1)
 release=$(sed -n 's/^PKG_RELEASE:=//p' "$root/openwrt/udp-discovery-relay/Makefile")
 arch=${UDR_APK_ARCH:-aarch64_cortex-a53}
 core="$out/udp-discovery-relay-$version-r$release.apk"
-ui="$out/gl-ui-udp-discovery-relay-$version-r$release.apk"
 work=$(mktemp -d)
 trap 'rm -rf "$work"' EXIT HUP INT TERM
 mkdir -p "$work/empty" "$work/root/etc/apk"
 printf '%s\n' "$arch" > "$work/root/etc/apk/arch"
 "$apk" mkpkg --info name:firmware-test-fixture --info version:1 --info arch:noarch \
     --info 'description:Test dependency capabilities only' \
-    --info 'provides:lua lua-cjson libuci-lua ubus gl-sdk4-ui-core gl-oui-rpc luci-lib-nixio' \
+    --info 'provides:lua lua-cjson libuci-lua ubus' \
     --files "$work/empty" --output "$work/deps.apk"
 # Assert target payload ownership even when CI builds as an ordinary user.
-for package in "$core" "$ui"; do
+for package in "$core"; do
     "$apk" adbdump "$package" > "$work/package-metadata"
     awk '/^[[:space:]]+(user|group):/ { seen=1; if ($2 != "root") { print "Non-root APK ownership: " $0 > "/dev/stderr"; bad=1 } } END { exit !seen || bad }' "$work/package-metadata"
 done
 # A usermode database allows the same disposable transactions without root.
 # The test deliberately does not execute service hooks in the fake firmware.
 if [ "$(id -u)" = 0 ]; then
-    "$apk" --root "$work/root" --initdb --allow-untrusted --no-network --no-scripts add "$work/deps.apk" "$core" "$ui"
+    "$apk" --root "$work/root" --initdb --allow-untrusted --no-network --no-scripts add "$work/deps.apk" "$core"
 else
-    "$apk" --root "$work/root" --initdb --usermode --allow-untrusted --no-network --no-scripts add "$work/deps.apk" "$core" "$ui"
+    "$apk" --root "$work/root" --initdb --usermode --allow-untrusted --no-network --no-scripts add "$work/deps.apk" "$core"
 fi
-[ -x "$work/root/usr/bin/udp-discovery-relay" ]
-[ -f "$work/root/www/views/gl-sdk4-ui-udp-discovery-relay.common.js" ]
-"$apk" --root "$work/root" --allow-untrusted --no-network --no-scripts del gl-ui-udp-discovery-relay
 [ -x "$work/root/usr/bin/udp-discovery-relay" ]
 printf '\n# user customization\n' >> "$work/root/etc/config/udp_discovery_relay"
 cp "$work/root/etc/config/udp_discovery_relay" "$work/expected"
@@ -48,4 +44,4 @@ printf '\n# upgraded package default\n' >> "$work/upgrade/etc/config/udp_discove
 cmp "$work/expected" "$work/root/etc/config/udp_discovery_relay"
 "$apk" --root "$work/root" --allow-untrusted --no-network --no-scripts del udp-discovery-relay
 [ ! -e "$work/root/usr/bin/udp-discovery-relay" ]
-echo 'PASS APK install, UI-only removal, config preservation, core removal'
+echo 'PASS Core APK install, config preservation and removal'

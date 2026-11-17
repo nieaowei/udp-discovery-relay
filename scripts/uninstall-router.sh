@@ -1,6 +1,5 @@
 #!/bin/sh
-# Default: remove UI only. --core also removes the independent daemon.
+# Remove the independent Core package using normal APK dependency handling.
 set -eu
-case "${1:-}" in ''|--core) ;; *) echo 'Usage: uninstall-router.sh [--core]' >&2; exit 1;; esac
-apk del gl-ui-udp-discovery-relay
-[ "${1:-}" != --core ] || apk del udp-discovery-relay
+[ "$#" = 0 ] || { echo 'Usage: uninstall-router.sh' >&2; exit 1; }
+apk del udp-discovery-relay

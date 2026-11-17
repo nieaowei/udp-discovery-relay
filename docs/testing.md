@@ -6,8 +6,6 @@
 cargo fmt --check
 cargo clippy --all-targets --locked -- -D warnings
 cargo test --locked
-node --test openwrt/gl-ui-udp-discovery-relay/scripts/test-ui.cjs
-lua5.1 tests/rpc.lua openwrt/gl-ui-udp-discovery-relay
 lua5.1 tests/config-adapter.lua /tmp/udr-empty-config.json
 cargo run --locked -- --config /tmp/udr-empty-config.json --check
 python3 scripts/check-version.py
@@ -15,7 +13,7 @@ python3 scripts/check-version.py
 
 Rust 单元测试覆盖配置、IPv4/UDP 校验和与边界、重复包缓存、接口子网计算、统计错误上限及禁用的 IPv6 模块。Linux 才编译的平台模块需在 Linux 检查；其他主机可执行可移植模块测试。
 
-JavaScript 测试覆盖配置与 revision、规则操作、固定 SDK4 请求、错误处理、统计缺失、日志和多语言。Lua 测试执行真实适配器代码，但模拟 UCI/SDK4 边界；它们不能替代目标系统的登录权限和服务生命周期验收。
+Core 的 Lua 测试覆盖 UCI 配置适配器。JavaScript 页面测试、SDK4 RPC 契约测试和 UI 包测试在 [独立 UI 仓库](https://github.com/nieaowei/gl-ui-udp-discovery-relay) 运行；Core 的测试与构建不需要 UI 源码。
 
 ## Linux 网络集成
 
@@ -47,7 +45,7 @@ sudo env UDR_APK_ARCH=aarch64_cortex-a53 scripts/build-apk.sh /path/to/sdk
 scripts/test-apk.sh /path/to/sdk
 ```
 
-打包前需要先构建对应二进制。事务测试检查 Core/UI 文件所有权，使用独立临时根目录和测试依赖能力，验证安装、单独卸载 UI、升级保留用户配置和移除 Core。普通用户使用 usermode 数据库，不执行固件服务脚本；实际 procd/nginx 行为需要部署验收。
+打包前需要先构建对应二进制。事务测试检查 Core 文件所有权，使用独立临时根目录和标准 OpenWrt 依赖能力，验证安装、升级保留用户配置和移除 Core。普通用户使用 usermode 数据库，不执行固件服务脚本；实际 procd 行为需要部署验收。
 
 ## 结果与性能
 

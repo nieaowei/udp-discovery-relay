@@ -34,7 +34,7 @@ apk add --allow-untrusted ./udp-discovery-relay-0.0.1-r1.apk
 
 这里的 `--allow-untrusted` 用于已校验的本地未签名产物；通过可信签名 feed 安装时遵循该 feed 的签名验证流程。遇到架构或依赖冲突时使用匹配的构建，不强制覆盖系统依赖。
 
-Core 依赖 Lua、lua-cjson、libuci-lua 和 ubus。安装 UI 还需要兼容的 gl-sdk4-ui-core、gl-oui-rpc、luci-lib-nixio：
+Core 依赖 Lua、lua-cjson、libuci-lua 和 ubus。可选 UI 由 [独立仓库](https://github.com/nieaowei/gl-ui-udp-discovery-relay) 构建和发布，还需要兼容的 gl-sdk4-ui-core、gl-oui-rpc、luci-lib-nixio。下载该仓库的 UI APK 后可单独安装：
 
 ```sh
 sha256sum -c gl-ui-udp-discovery-relay-0.0.1-r1.apk.sha256
