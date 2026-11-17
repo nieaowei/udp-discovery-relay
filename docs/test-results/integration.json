@@ -1,0 +1,19 @@
+{
+  "passed": [
+    "only CAP_NET_RAW retained and no_new_privs set",
+    "bidirectional UDP source IP/port, HTTPS fingerprint pinning, register and real file upload/hash",
+    "bidirectional unencrypted HTTP registration and upload on advertised alternate TCP port",
+    "burst deduplication and no infinite loop",
+    "distinct devices with identical payloads are not coalesced",
+    "original UDP source survives active multicast masquerade rules",
+    "oversized datagram rejection and no unicast reflection",
+    "broadcast forwarding with original source IP and port",
+    "SIGHUP validation, disable stops discovery, reenable recovers",
+    "logical network resolution and one-way rule enforcement",
+    "interface down/up and IPv4 address renewal recovery",
+    "deleted/recreated veth with a new ifindex recovers automatically",
+    "graceful SIGTERM, no relay while stopped, restart recovery",
+    "Linux br-lan bridge multicast receive/transmit preserves source in both directions",
+    "daemon statistics and 10-second idle resource measurement"
+  ]
+}

@@ -1,0 +1,1 @@
+{"enabled":true,"rules":[{"id":"localsend","name":"LocalSend","port":53317,"multicast":"224.0.0.167","devices":["eth0","br-lan"]}]}

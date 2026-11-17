@@ -1,0 +1,88 @@
+name: Test, build and release
+on:
+  push:
+    branches: ['**']
+    tags: ['v*']
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  tests:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Linux test dependencies
+        run: sudo apt-get update -qq && sudo apt-get install -y iproute2 nftables lua5.1 lua-cjson libcap2-bin
+      - name: Rust toolchain
+        run: rustup update stable && rustup component add rustfmt clippy
+      - run: cargo fmt --check
+      - run: cargo clippy --all-targets --locked -- -D warnings
+      - run: cargo test --locked
+      - run: node --test openwrt/gl-ui-udp-discovery-relay/scripts/test-ui.cjs
+      - run: lua5.1 tests/rpc.lua openwrt/gl-ui-udp-discovery-relay
+      - run: lua5.1 tests/config-adapter.lua /tmp/udr-empty-config.json && cargo run --locked -- --config /tmp/udr-empty-config.json --check
+      - name: Verify semantic version
+        run: python3 scripts/check-version.py '${{ github.ref_name }}'
+      - name: Wire integration tests and resource measurement
+        run: |
+          cargo build --release --locked
+          sudo python3 tests/netns.py target/release/udp-discovery-relay
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: test-results
+          path: .test-output/
+  apk:
+    needs: tests
+    runs-on: ubuntu-24.04
+    env:
+      # Official reference SDK, pinned content. Static musl avoids importing a
+      # different firmware's shared libraries. This is NOT the GL vendor SDK.
+      SDK_URL: https://downloads.openwrt.org/releases/25.12.6/targets/mediatek/filogic/openwrt-sdk-25.12.6-mediatek-filogic_gcc-14.3.0_musl.Linux-x86_64.tar.zst
+      SDK_SHA256: 1c04ac47bdfc361d6aab299eb520d570e368013dedcb8d29cf39dc7168ae642e
+      UDR_SDK_LABEL: OpenWrt 25.12.6 official reference SDK; GL vendor acceptance pending
+      UDR_APK_ARCH: aarch64_cortex-a53
+    steps:
+      - uses: actions/checkout@v4
+      - run: sudo apt-get update -qq && sudo apt-get install -y zstd
+      - name: Fetch verified SDK
+        run: |
+          curl --fail --location --retry 3 "$SDK_URL" -o /tmp/sdk.tar.zst
+          printf '%s  /tmp/sdk.tar.zst\n' "$SDK_SHA256" | sha256sum -c -
+          mkdir /tmp/sdk
+          tar --zstd -xf /tmp/sdk.tar.zst -C /tmp/sdk --strip-components=1
+      - name: Cross compile with SDK GCC and static musl
+        run: |
+          rustup update stable
+          rustup target add aarch64-unknown-linux-musl
+          SOURCE_DATE_EPOCH=$(git log -1 --format=%ct) scripts/build-static.sh /tmp/sdk
+          SOURCE_DATE_EPOCH=$(git log -1 --format=%ct) scripts/build-apk.sh /tmp/sdk
+      - name: Real APK lifecycle and configuration preservation
+        run: scripts/test-apk.sh /tmp/sdk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: openwrt-arm64-apks
+          path: dist/
+  release:
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [tests, apk]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: openwrt-arm64-apks
+          path: dist
+      - name: Publish versioned artifacts and checksums
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          printf '%s\n' 'Source-preserving discovery relay. Read build-provenance.txt and the installation/acceptance guide before installation. APKs are unsigned; firmware 4.11.0 hardware acceptance is not implied by CI tests.' > /tmp/release-notes.md
+          gh release create "$RELEASE_TAG" dist/*.apk dist/*.sha256 dist/udp-discovery-relay dist/build-provenance.txt dist/LICENSE --title "$RELEASE_TAG" --notes-file /tmp/release-notes.md

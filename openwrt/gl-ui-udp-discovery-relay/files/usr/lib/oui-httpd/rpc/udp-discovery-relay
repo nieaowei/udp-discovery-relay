@@ -1,0 +1,141 @@
+-- Loaded exclusively by SDK4's authenticated oui.rpc dispatcher, as in the
+-- supplied Avahi plugin. No standalone HTTP endpoint or arbitrary command RPC.
+local fs=require 'nixio.fs'
+local nixio=require 'nixio'
+local json=require 'cjson.safe'
+local ubus=require 'oui.ubus'
+local rpc=require 'oui.rpc'
+local uci=require 'uci'
+local model=require 'udp-discovery-relay.config'
+local M={}
+local config='/etc/config/udp_discovery_relay'
+local lock='/var/lock/udp-discovery-relay-ui.lock'
+local function failure(e) return {err_code=-1,err_msg=tostring(e)} end
+local function invalid(e) return rpc.ERROR_CODE_INVALID_PARAMS,tostring(e) end
+local function command(args)
+    local argv={'/bin/sh','-c','"$@" 2>&1; code=$?; printf "\\nUDR_EXIT:%s\\n" "$code"','udr-ui'}
+    for _,v in ipairs(args) do argv[#argv+1]=v end
+    local p,e=ngx.pipe.spawn(argv,{stdout_read_timeout=20000,merge_stderr=true})
+    if not p then return nil,e end
+    local out,err=p:stdout_read_all()
+    if not out then return nil,err end
+    local body,code=out:match('^(.*)\nUDR_EXIT:(%d+)\n$')
+    if not code then return nil,'Incomplete command response or timeout' end
+    if code~='0' then return nil,'Command failed ('..code..'): '..body:sub(1,512) end
+    return body
+end
+local function read()
+    local stat=fs.lstat(config)
+    if not stat or stat.type~='reg' or stat.size>65536 then return nil,'Missing/invalid configuration (maximum 64 KiB)' end
+    local raw=fs.readfile(config)
+    if not raw then return nil,'Cannot read UCI configuration' end
+    return raw
+end
+local function unique()
+    return (fs.readfile('/proc/sys/kernel/random/uuid') or ''):match('^[%x%-]+')
+end
+local function write_new(path,raw)
+    local f=nixio.open(path,nixio.open_flags('wronly','creat','excl'),384)
+    if not f then return nil,'Cannot create configuration temporary file' end
+    local offset=0
+    while offset<#raw do local n=f:write(raw:sub(offset+1));if not n or n==0 then break end;offset=offset+n end
+    local synced=f:sync();f:close()
+    if offset~=#raw or not synced then fs.unlink(path);return nil,'Cannot write/sync configuration' end
+    return true
+end
+local function networks()
+    local names={}
+    uci.cursor():foreach('network','interface',function(s) if s['.name']~='loopback' then names[#names+1]=s['.name'] end end)
+    table.sort(names);return names
+end
+function M.get_config()
+    local raw,err=read();if not raw then return failure(err) end
+    local ok,c=pcall(model.read,uci.cursor())
+    if not ok then return failure(c) end
+    return {settings=c,revision=ngx.md5(raw),interfaces=networks()}
+end
+function M.get_status()
+    local data,err=ubus.call('service','list',{name='udp-discovery-relay'})
+    if type(data)~='table' then return failure(err or 'Cannot query procd') end
+    local running,pid=false,nil
+    for _,instance in pairs((data['udp-discovery-relay'] or {}).instances or {}) do if instance.running then running=true;pid=instance.pid end end
+    local enabled=false
+    for name in fs.dir('/etc/rc.d') or function() end do if name:match('^S%d+(.+)$')=='udp-discovery-relay' then enabled=true end end
+    local metrics
+    if running then
+        local stat=fs.stat('/var/run/udp-discovery-relay/status.json')
+        if stat and stat.size<32768 then
+            local raw=fs.readfile('/var/run/udp-discovery-relay/status.json')
+            metrics=raw and json.decode(raw)
+            if type(metrics)~='table' or tonumber(metrics.pid)~=tonumber(pid) then metrics=nil end
+        end
+    end
+    return {running=running,enabled=enabled,metrics=metrics,metrics_available=metrics~=nil,version=(fs.readfile('/usr/share/udp-discovery-relay/version') or ''):match('^[%w%.%-]+')}
+end
+local function save(params,reset)
+    if type(params)~='table' or type(params.revision)~='string' or #params.revision~=32 or (params.apply~=nil and type(params.apply)~='boolean') then return invalid('Invalid save parameters') end
+    local settings=params.settings
+    if reset then settings={enabled=true,log_level='info',loop_protection=true,max_packet_size=1400,rules={{id='localsend',name='LocalSend',enabled=true,protocol='udp',port=53317,multicast='224.0.0.167',direction='bidirectional',log_level='info',network={'wan','lan'},input={},output={}}}} end
+    if type(settings)~='table' then return invalid('Expected settings object') end
+    if not fs.mkdir(lock,448) then return failure('Configuration is busy; retry shortly') end
+    local token=unique()
+    if not token then fs.rmdir(lock);return failure('Cannot obtain temporary filename') end
+    local candidate='/tmp/udp-discovery-relay-'..token..'.json'
+    local replacement=config..'.ui-'..token
+    local function cleanup() fs.unlink(candidate);fs.unlink(replacement);fs.rmdir(lock) end
+    -- Perform pure/local operations in pcall; ngx.pipe and ubus yield on Lua 5.1.
+    local ok,result=pcall(function()
+        local raw,e=read();if not raw then return failure(e) end
+        if ngx.md5(raw)~=params.revision then return failure('Configuration changed externally; refresh before saving') end
+        if type(settings.enabled)~='boolean' or type(settings.loop_protection)~='boolean' or type(settings.log_level)~='string' or type(settings.max_packet_size)~='number' then return failure('Missing/invalid global fields') end
+        local known={};for _,n in ipairs(networks()) do known[n]=true end
+        if type(settings.rules)~='table' then return failure('Expected rules array') end
+        for _,r in ipairs(settings.rules) do
+            if type(r)~='table' or r.devices~=nil then return failure('UI requires logical networks') end
+            if type(r.enabled)~='boolean' or type(r.port)~='number' then return failure('Missing rule fields') end
+            for _,key in ipairs({'id','name','protocol','multicast','direction','log_level'}) do if type(r[key])~='string' then return failure('Missing rule field: '..key) end end
+            for _,field in ipairs({'network','input','output'}) do
+                if r[field]~=nil and type(r[field])~='table' then return failure('Expected network list') end
+                for _,n in ipairs(r[field] or {}) do if not known[n] then return failure('Unknown logical network: '..tostring(n)) end end
+            end
+        end
+        local encoded,e=model.encode(settings);if not encoded then return failure(e) end
+        if #encoded>65536 then return failure('Configuration exceeds 64 KiB') end
+        local saved,e=write_new(candidate,encoded);if not saved then return failure(e) end
+        return {raw=raw}
+    end)
+    if not ok or result.err_code then cleanup();return ok and result or failure(result) end
+    local checked,e=command({'/usr/bin/udp-discovery-relay','--config',candidate,'--check'})
+    if not checked then cleanup();return failure(e) end
+    -- Recheck after the yielding subprocess to reject concurrent external edits.
+    local current,read_err=read()
+    if not current or ngx.md5(current)~=params.revision then cleanup();return failure(read_err or 'Configuration changed during validation') end
+    local serialized_ok,raw=pcall(model.serialize,settings)
+    if not serialized_ok then cleanup();return failure(raw) end
+    local saved,err=write_new(replacement,raw)
+    if not saved then cleanup();return failure(err) end
+    if not fs.rename(replacement,config) then cleanup();return failure('Cannot atomically replace configuration') end
+    cleanup()
+    local response={success=true,revision=ngx.md5(raw),saved=true}
+    if params.apply then
+        local applied,apply_err=command({'/etc/init.d/udp-discovery-relay','reload'})
+        if not applied then response.warning='Saved; apply failed: '..tostring(apply_err) else response.applied=true end
+    end
+    return response
+end
+function M.set_config(params) return save(params,false) end
+function M.reset(params) return save(params,true) end
+function M.service(params)
+    local action=type(params)=='table' and params.action
+    local allowed={start=true,stop=true,restart=true,reload=true,enable=true,disable=true}
+    if not allowed[action] then return invalid('Invalid service action') end
+    local out,e=command({'/etc/init.d/udp-discovery-relay',action})
+    if not out then return failure(e) end
+    return {success=true}
+end
+function M.get_logs()
+    local out,e=command({'/sbin/logread','-e','udp-discovery-relay','-l','200'})
+    if not out then return failure(e) end
+    return {text=out:sub(-65536)}
+end
+return M

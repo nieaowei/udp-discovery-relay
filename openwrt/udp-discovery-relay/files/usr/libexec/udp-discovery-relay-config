@@ -1,0 +1,8 @@
+#!/usr/bin/lua
+local ok,result=pcall(function()
+    local model=require 'udp-discovery-relay.config'
+    local cursor=require('uci').cursor()
+    return assert(model.encode(model.read(cursor)))
+end)
+if not ok then io.stderr:write(tostring(result),'\n');os.exit(1) end
+io.write(result,'\n')

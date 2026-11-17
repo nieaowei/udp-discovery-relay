@@ -1,0 +1,1 @@
+{"name":"gl-ui-udp-discovery-relay","version":"0.0.1","private":true,"scripts":{"test":"node --test scripts/test-ui.cjs"}}
